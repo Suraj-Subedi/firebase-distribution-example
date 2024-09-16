@@ -1,0 +1,68 @@
+name: Staging - Firebase App Distribution
+
+on:
+  push:
+    branches:
+      - "staging"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up ruby env
+        uses: ruby/setup-ruby@v1.138.0
+        with:
+          ruby-version: 3.2.1
+          bundler-cache: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: "zulu"
+          java-version: "11"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      - name: Decode KEY properties
+        env:
+          KEY_PROPERTIES: ${{ secrets.KEY_PROPERTIES }}
+        run: |
+          echo "$KEY_PROPERTIES" | base64 --decode > android/key.properties
+
+      - name: Decode Keystore
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+        run: |
+          echo "$KEYSTORE" | base64 --decode > android/app/upload-keystore.jks
+
+      - name: Decode GOOGLE_APPLICATION_CREDENTIALS
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS" | base64 --decode > android/app/google-application-credentials.json
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APP Bundle
+        run: flutter build appbundle --release --no-tree-shake-icons --no-shrink --no-pub
+
+      - name: "Install Firebase CLI"
+        run: |
+          curl -sL firebase.tools | bash
+
+      - name: Distribute app For testing
+        env:
+          FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/android/app/google-application-credentials.json"
+          firebase appdistribution:distribute build/app/outputs/bundle/release/app-release.aab  \
+          --groups "our-tester" \
+          --app "$FIREBASE_ANDROID_APP_ID" \
+          --release-notes "Staging"
